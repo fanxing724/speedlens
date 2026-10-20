@@ -1,268 +1,67 @@
-import { exitSources, services, groups } from './catalog.mjs';
-import { validIp, canonicalIp, compareExits, riskFields, riskSummary, median, safeHistory } from './core.mjs';
-
-const $ = id => document.getElementById(id);
-const state = { busy:false, controller:null, sources:[], services:[], filter:'all', primary:null, info:null, report:null, context:null, lastStarted:null };
-const HISTORY_KEY = 'speedlens.history.v1';
-let history = [];
-try { history = safeHistory(JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')); } catch { /* Storage may be blocked. */ }
-try { document.documentElement.dataset.theme = localStorage.getItem('speedlens.theme') === 'light' ? 'light' : 'dark'; } catch { /* Use dark default. */ }
-
-function element(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
+import {exitSources,services,groups,quickServices,splitTargets} from './catalog.mjs';
+import {validIp,canonicalIp,riskFields,riskSummary,median,safeHistory,compareExits} from './core.mjs';
+import {probeExit,maskIp,deadline,eachLimit} from './probes.mjs';
+const $=id=>document.getElementById(id);
+function readStorage(key,fallback){try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}}
+function store(key,value){try{localStorage.setItem(key,JSON.stringify(value));return true;}catch{return false;}}
+const state={busy:false,controller:null,route:'network',hidden:readStorage('speedlens.privacy',true),auto:readStorage('speedlens.auto',true),sources:[],quick:[],sites:[],split:[],splitFilter:'all',serviceFilter:'all',networkDone:false,sitesDone:false,splitDone:false,modal:null,modalToken:0,report:null,dual:[]};
+let history=safeHistory(readStorage('speedlens.history.v1',[]));
+const infoCache=new Map();
+const quickSamples=new Map();
+const element=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.className=cls;if(text!=null)node.textContent=text;return node;};
+const formatMs=value=>Number.isFinite(value)?`${Math.round(value)} ms`:'—';
+const dateLabel=value=>new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+function errorText(error){if(error?.name==='TimeoutError')return '探针超时';if(error instanceof TypeError)return '跨域策略或网络未返回可读响应';return error?.message||'未获得可确认结果';}
+function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').hidden=true,3800);}
+function notice(text){$('notice').textContent=text;$('notice').hidden=!text;}
+async function requestJson(url,options={},signal,ms=16000){return deadline(signal,ms,async ownSignal=>{const response=await fetch(url,{cache:'no-store',credentials:'omit',...options,signal:ownSignal});let data;try{data=await response.json();}catch{throw new Error('接口响应格式无效');}if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data;});}
+const timed=deadline;
+function waitFor(promise,signal){if(!signal)return promise;return new Promise((resolve,reject)=>{if(signal.aborted)return reject(signal.reason);const abort=()=>{signal.removeEventListener('abort',abort);reject(signal.reason);};signal.addEventListener('abort',abort,{once:true});Promise.resolve(promise).then(value=>{signal.removeEventListener('abort',abort);resolve(value);},error=>{signal.removeEventListener('abort',abort);reject(error);});});}
+function infoFor(ip,signal){ip=canonicalIp(ip);if(!ip)return Promise.reject(new Error('请输入有效的公网 IP'));if(!infoCache.has(ip)){if(infoCache.size>=128)infoCache.delete(infoCache.keys().next().value);const promise=requestJson(`/api/lookup?ip=${encodeURIComponent(ip)}`).catch(error=>{infoCache.delete(ip);throw error;});infoCache.set(ip,promise);}return waitFor(infoCache.get(ip),signal);}
+function reset(targets){return targets.map(target=>({id:target.id,status:'idle'}));}
+state.sources=reset(exitSources);state.quick=reset(quickServices);state.sites=reset(services);state.split=reset(splitTargets);
+function country(code){return /^[A-Z]{2}$/.test(code||'')?`${String.fromCodePoint(...[...code].map(char=>127397+char.charCodeAt(0)))} ${code}`:'—';}
+function ipButton(ip){const button=element('button','ip-button',maskIp(ip,state.hidden));button.type='button';button.setAttribute('aria-label','查看此出口 IP 的归属与风险');button.addEventListener('click',()=>openIp(ip));return button;}
+function place(info,fallback='归属地待查询'){if(!info)return fallback;if(state.hidden)return info.countryCode?country(info.countryCode):'归属地已隐藏';return [info.country,info.region,info.city].filter(Boolean).join(' · ')||'归属地未知';}
+function renderSources(){
+ $('source-grid').replaceChildren(...exitSources.map(target=>{const result=state.sources.find(item=>item.id===target.id);const card=element('article','source-card');const title=element('div','source-title');title.append(element('span',`dot ${result.status}`),element('strong','',target.name),element('small','',target.subtitle));const value=element('div','ip-value');if(result.ip)value.append(ipButton(result.ip));else value.textContent={idle:'等待检测',running:'检测中…',failed:'未确认',stopped:'已停止'}[result.status];card.append(title,value,element('div','source-place',result.ip?place(result.info,result.countryCode?country(result.countryCode):state.hidden?'归属信息已隐藏':result.location||'点击 IP 查询归属'):result.error||'—'),element('p','source-description',`· ${target.description}`),element('div','source-host',new URL(target.url).host));return card;}));
+ const domestic=state.sources.find(x=>x.id==='domestic'),overseas=state.sources.find(x=>x.id==='cloudflare');
+ const verdict=compareExits([{...domestic,id:'domestic'},{...overseas,id:'cloudflare'}]);
+ $('network-verdict').textContent=verdict.kind==='unknown'?verdict.detail:`${verdict.title}。${verdict.detail}`;
 }
-function toast(message) {
-  $('toast').textContent = message;
-  $('toast').hidden = false;
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => $('toast').hidden = true,4500);
+function sparkline(values=[]){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 75 42');svg.setAttribute('class','sparkline');svg.setAttribute('aria-hidden','true');if(values.length<2)return svg;const maximum=Math.max(...values),minimum=Math.min(...values),range=Math.max(1,maximum-minimum);const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',values.map((value,index)=>`${index?'L':'M'}${index*74/(values.length-1)} ${35-(value-minimum)/range*28}`).join(' '));path.setAttribute('fill','none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','2');svg.append(path);return svg;}
+function renderQuick(){
+ $('quick-grid').replaceChildren(...quickServices.map(target=>{const result=state.quick.find(item=>item.id===target.id);const card=element('article','quick-card');card.append(sparkline(quickSamples.get(target.id)));const mark=element('div','site-mark',target.mark);mark.style.color=target.color;const name=element('div','quick-name',target.name);name.append(element('small','',target.group==='local'?'国内':'国际'));const speed=element('div',`latency ${result.status==='done'?(result.ms<400?'fast':'slow'):'waiting'}`,result.status==='done'?String(Math.round(result.ms)):{idle:'待检测',running:'检测中',failed:'未确认',stopped:'已停止'}[result.status]);if(result.status==='done')speed.append(element('small','','ms'));card.append(mark,name,speed);if(result.error)card.title=result.error;return card;}));
 }
-function notice(message) { $('notice').textContent = message; $('notice').hidden = !message; }
-function formatMs(value) { return Number.isFinite(value) ? `${Math.round(value)} ms` : '—'; }
-function dateLabel(value) { return new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
-function errText(error) { return error?.name === 'TimeoutError' ? '请求超时' : error?.message || '请求未完成'; }
-
-async function timed(signal, ms, task) {
-  const controller = new AbortController();
-  const stop = () => controller.abort(signal.reason);
-  if (signal?.aborted) throw signal.reason;
-  signal?.addEventListener('abort',stop,{once:true});
-  const timer = setTimeout(()=>controller.abort(new DOMException('请求超时','TimeoutError')),ms);
-  try { return await task(controller.signal); }
-  finally { clearTimeout(timer); signal?.removeEventListener('abort',stop); }
+function renderServices(){
+ const filtered=services.filter(target=>state.serviceFilter==='all'||target.group===state.serviceFilter);
+ $('service-grid').replaceChildren(...filtered.map(target=>{const result=state.sites.find(item=>item.id===target.id);const card=element('article','service-card');const mark=element('div','site-mark',target.mark);mark.style.color=target.color;const details=element('div','');const link=element('a','service-name',target.name);link.href=`https://${target.domain}`;link.target='_blank';link.rel='noopener noreferrer';details.append(link,element('div','service-domain',target.domain));const status=element('div',`service-status ${result.status==='done'?'success':''}`);status.append(element('span','',{idle:'待检测',running:'检测中…',done:'已响应',failed:'未确认',stopped:'已停止'}[result.status]),element('small','',result.status==='done'?`${formatMs(result.ms)} · 状态不可见`:'HTTPS'));card.append(mark,details,status);if(result.error)card.title=result.error;return card;}));
+ const done=state.sites.filter(x=>x.status==='done').length,finished=state.sites.filter(x=>['done','failed','stopped'].includes(x.status)).length;$('service-summary').textContent=`${done} 已响应 / ${finished} 已检测 / ${services.length} 目标`;
 }
-
-async function requestJson(url, options = {}, signal, ms = 16000) {
-  return timed(signal,ms,async ownSignal => {
-    const response = await fetch(url,{cache:'no-store',credentials:'omit',...options,signal:ownSignal});
-    let data;
-    try { data = await response.json(); } catch { throw new Error('响应格式无效，请重试'); }
-    if (!response.ok) throw new Error(data.error || `请求失败 (${response.status})`);
-    return data;
-  });
+function renderSplit(){
+ const filtered=splitTargets.filter(target=>state.splitFilter==='all'||target.group===state.splitFilter);
+ $('split-body').replaceChildren(...filtered.map(target=>{const result=state.split.find(item=>item.id===target.id);const row=element('tr','');const site=element('td','');const wrap=element('div','split-site');const mark=element('div','site-mark',target.name[0]);const names=element('div','');const name=element('strong','',target.name);name.append(element('span','category',target.group==='local'?'国内':target.group==='ai'?'AI':target.group==='dev'?'开发':'国际'));names.append(name,element('small','',new URL(target.url).host));wrap.append(mark,names);site.append(wrap);
+ const nation=element('td','country',country(result.info?.countryCode||result.countryCode));const address=element('td','');if(result.ip){address.append(ipButton(result.ip),element('small','cell-note',formatMs(result.ms)));}else address.append(element('span',result.status==='running'?'pending':'unconfirmed',{idle:'待检测',running:'检测中…',failed:'未确认',stopped:'已停止'}[result.status]));
+ const geo=element('td','');geo.append(element('span','',result.ip?place(result.info,result.geoStatus==='loading'?'查询中…':'归属地未知'):'—'));if(result.info?.isp)geo.append(element('small','cell-note',state.hidden?'网络信息已隐藏':result.info.isp));if(result.error)geo.append(element('small','cell-note',result.error));if(result.geoError)geo.append(element('small','cell-note','归属查询暂不可用，出口 IP 仍有效'));
+ const asn=element('td','',result.info?.asn?state.hidden?'AS****':`AS${result.info.asn}`:'—');row.append(site,nation,address,geo,asn);return row;}));
+ const valid=state.split.filter(x=>x.ip).length,finished=state.split.filter(x=>['done','failed','stopped'].includes(x.status)).length;$('split-summary').textContent=`${valid} 个可读出口 / ${finished} 已检测 / ${splitTargets.length} 目标`;
 }
-
-async function pool(items, concurrency, signal, task) {
-  let index = 0;
-  await Promise.all(Array.from({length:Math.min(concurrency,items.length)},async()=>{
-    while (index < items.length && !signal.aborted) {
-      const item = items[index++];
-      await task(item);
-    }
-  }));
-}
-
-function resetSources() { state.sources = exitSources.map(source=>({ id:source.id,status:'idle' })); }
-function resetServices() { state.services = services.map(service=>({ id:service.id,status:'idle' })); }
-
-function renderSources() {
-  $('source-grid').replaceChildren(...exitSources.map(source=>{
-    const result = state.sources.find(x=>x.id===source.id) || {status:'idle'};
-    const card = element('article','source-card');
-    const top = element('div','source-top');
-    top.append(element('span','source-name',source.name),element('span',`source-state ${result.status}`));
-    const ip = result.ip || ({idle:'等待检测',running:'检测中…',failed:'未能获取',stopped:'已停止'}[result.status] || '—');
-    const address = element(result.ip ? 'button' : 'div',`source-ip${result.ip ? ' text-button' : ''}`,ip);
-    if (result.ip) { address.type='button'; address.title='查询此 IP 的风险'; address.disabled=state.busy; address.addEventListener('click',()=>{ $('lookup-ip').value=result.ip; start('risk',signal=>lookupRisk(result.ip,signal)); }); }
-    card.append(top,element('div','source-host',source.host),address,element('div','source-location',result.location || result.error || (source.id==='ipv6' ? '观察 IPv6 是否有可用出口' : '等待第三方返回实际 IP')));
-    const bottom = element('div','source-bottom');
-    bottom.append(element('span','',source.family),element('span','',result.status==='done' ? formatMs(result.ms) : result.status==='running' ? '请求中' : '—'));
-    card.append(bottom);
-    return card;
-  }));
-  const verdict = compareExits(state.sources);
-  $('routing-title').textContent=verdict.title;
-  $('routing-detail').textContent=verdict.detail;
-}
-
-function updateHero() {
-  const primary = ['cloudflare','ipv4','domestic','ipv6'].map(id=>state.sources.find(x=>x.id===id&&validIp(x.ip))).find(Boolean);
-  state.primary=primary || null;
-  $('copy-ip').disabled=!primary;
-  if (!primary) {
-    $('primary-ip').textContent='等待发现你的出口';
-    $('primary-ip').classList.remove('ipv6');
-    $('primary-location').textContent=state.busy ? '正在向不同检测点发起请求…' : '点击「开始全面检测」，从不同站点观察当前网络。';
-    $('primary-source').textContent='—'; $('primary-isp').textContent='—'; $('exit-protocol').textContent='等待检测';
-    return;
-  }
-  $('primary-ip').textContent=primary.ip;
-  $('primary-ip').classList.toggle('ipv6',primary.ip.includes(':'));
-  $('exit-protocol').textContent=primary.ip.includes(':') ? 'IPv6 出口' : 'IPv4 出口';
-  $('primary-source').textContent=exitSources.find(x=>x.id===primary.id).name;
-  const sameInfo=state.info && canonicalIp(state.info.ip)===canonicalIp(primary.ip);
-  $('primary-location').textContent=sameInfo ? [state.info.country,state.info.region,state.info.city].filter(Boolean).join(' · ') || '归属地数据未知' : primary.location || '点击该 IP 可进一步查询归属地与风险';
-  $('primary-isp').textContent=sameInfo ? [state.info.isp,state.info.asn && `AS${state.info.asn}`].filter(Boolean).join(' / ') || '未知' : '尚未查询';
-}
-
-function renderRisk(info = state.info) {
-  const summary=riskSummary(info?.flags);
-  $('risk-title').textContent=info ? summary.title : '等待风险数据';
-  $('risk-title').className=`status-${summary.kind}`;
-  $('risk-badge').textContent=info ? `${summary.known}/5 字段可用` : '未查询';
-  $('risk-symbol').textContent=summary.kind==='flagged' ? '△' : summary.kind==='clear' ? '◇' : '◌';
-  $('risk-symbol').className=`risk-symbol status-${summary.kind}`;
-  $('risk-subtitle').textContent=info ? `查询目标 ${info.ip}` : '按数据源实际字段显示，不使用虚构分数。';
-  $('risk-list').replaceChildren(...riskFields.map(([key,label])=>{
-    const value=info?.flags?.[key];
-    const row=element('div','risk-row');
-    row.append(element('span','',label),element('span',typeof value!=='boolean' ? 'status-unknown' : value ? 'status-flagged' : 'status-clear',typeof value!=='boolean' ? '未知' : value ? '已标记' : '未标记'));
-    return row;
-  }));
-  const source=$('risk-source');
-  source.replaceChildren();
-  if (info) {
-    const link=element('a','',info.source);
-    link.href=info.source==='IPQuery' ? 'https://ipquery.io/' : 'https://ipwhois.io/';
-    link.target='_blank';link.rel='noopener noreferrer';
-    source.append('来源：',link,` · ${dateLabel(info.checkedAt)}${info.cached ? ' · 缓存' : ''}`);
-    if(Number.isFinite(info.riskScore)) source.append(element('div','',`IPQuery 风险分：${info.riskScore} / 100（越低表示其评估风险越少）`));
-    if(info.notice) source.append(element('div','',info.notice));
-  } else source.textContent='数据覆盖与结果受第三方数据库更新影响。';
-}
-
-function renderServices() {
-  const filtered=services.filter(service=>state.filter==='all'||service.group===state.filter);
-  $('service-grid').replaceChildren(...filtered.map(service=>{
-    const result=state.services.find(x=>x.id===service.id) || {status:'idle'};
-    const card=element('article','service-card');
-    const mark=element('div','service-mark',service.mark);mark.style.color=service.color;mark.setAttribute('aria-hidden','true');
-    const info=element('div','service-info');
-    const link=element('a','service-name',service.name);link.href=`https://${service.domain}`;link.target='_blank';link.rel='noopener noreferrer';
-    info.append(link,element('div','service-domain',service.domain));
-    const status=element('div',`service-status ${result.status==='done' ? 'status-clear' : result.status==='failed' ? 'status-flagged' : ''}`);
-    const label={idle:'等待检测',running:'请求中…',done:'已响应',failed:'未确认',stopped:'已停止'}[result.status];
-    status.append(element('span',result.status==='running' ? 'loading' : '',label),element('small','',result.status==='done' ? `${Math.round(result.ms)} ms · 状态不可见` : result.status==='failed' ? '网络 / 浏览器策略' : 'HTTPS'));
-    if(result.error) card.title=result.error;
-    card.append(mark,info,status);
-    return card;
-  }));
-  const responded=state.services.filter(x=>x.status==='done').length;
-  const finished=state.services.filter(x=>['done','failed','stopped'].includes(x.status)).length;
-  $('service-count').textContent=`${filtered.length} 个目标`;
-  $('service-summary').textContent=finished||state.services.some(x=>x.status==='running') ? `${responded} 已响应 / ${finished} 已检测 / ${services.length} 总目标` : '尚未检测';
-}
-
-function renderHistory() {
-  const container=$('history-list');
-  if(!history.length) {
-    const empty=element('div','empty-history');empty.append(element('span','','◷'),element('div','','还没有检测记录。完成一次全面检测，开始对照你的节点。'));container.replaceChildren(empty);
-    $('clear-history').disabled=true;return;
-  }
-  $('clear-history').disabled=false;
-  const head=element('div','history-row history-heading');['检测时间','节点备注','出口 IP','网站响应'].forEach(label=>head.append(element('span','',label)));
-  container.replaceChildren(head,...history.map(item=>{
-    const row=element('div','history-row');
-    const address=element('span','');
-    item.exits.slice(0,2).forEach(ip=>{address.append(element('small','',`${ip.name} · ${ip.ip}`));});
-    if(!item.exits.length) address.textContent='未获得出口';
-    row.append(element('span','',dateLabel(item.time)),element('span','',item.label||'未备注'),address,element('span','',`${item.responded} / ${item.total} 已响应`));return row;
-  }));
-}
-
-const runButtons=['run-all','run-exits','run-services','lookup-submit','run-webrtc','run-speed'];
-function setBusy(busy) {
-  state.busy=busy;document.body.classList.toggle('running',busy);
-  runButtons.forEach(id=>$(id).disabled=busy);
-  $('stop-button').hidden=!busy;
-  $('export-report').disabled=busy||!state.report;
-  renderSources();
-}
-
-async function start(kind,task) {
-  if(state.busy) return;
-  const controller=new AbortController();state.controller=controller;notice('');setBusy(true);
-  try { await task(controller.signal); }
-  catch(error) {
-    if(controller.signal.aborted) toast('已停止检测；未完成的全面检测不会写入历史。');
-    else notice(errText(error));
-  } finally {
-    if(controller.signal.aborted) {
-      for(const item of [...state.sources,...state.services]) if(item.status==='running') item.status='stopped';
-    }
-    state.controller=null;setBusy(false);renderServices();
-    updateHero();
-  }
-}
-
-async function detectExits(signal) {
-  resetSources();state.info=null;renderRisk();renderSources();updateHero();
-  await pool(exitSources,3,signal,async source=>{
-    const result=state.sources.find(x=>x.id===source.id);result.status='running';renderSources();
-    const started=performance.now();
-    try {
-      const data=await timed(signal,8000,async ownSignal=>{
-        const url=new URL(source.url);url.searchParams.set('_sl',`${Date.now()}-${Math.random().toString(16).slice(2)}`);
-        const response=await fetch(url,{signal:ownSignal,credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer'});
-        if(!response.ok) throw new Error(`检测点返回 ${response.status}`);
-        return source.parse(source.text ? await response.text() : await response.json());
-      });
-      if(!validIp(data.ip)) throw new Error('检测点未返回有效 IP');
-      Object.assign(result,{...data,ip:canonicalIp(data.ip),status:'done',ms:performance.now()-started});
-    } catch(error) {Object.assign(result,{status:signal.aborted ? 'stopped' : 'failed',error:signal.aborted ? '已停止' : source.id==='ipv6' ? '无可用响应；不直接判定泄漏' : errText(error)});}
-    renderSources();updateHero();
-  });
-  signal.throwIfAborted();
-}
-
-async function lookupRisk(ip,signal) {
-  if(!validIp(ip)) throw new Error('请输入有效的公网 IPv4 或 IPv6 地址');
-  state.info=null;renderRisk();updateHero();
-  $('risk-title').textContent='正在查询风险数据…';$('risk-subtitle').textContent=`查询目标 ${ip}`;
-  $('lookup-result').textContent=`正在查询 ${ip}…`;
-  try {
-    state.info=await requestJson(`/api/lookup?ip=${encodeURIComponent(ip)}`,{},signal);
-    $('lookup-result').textContent=`${ip} · ${state.info.source} · 结果已更新至风险画像`;
-    renderRisk();updateHero();
-  } catch(error) {
-    renderRisk();$('risk-title').textContent=signal.aborted ? '查询已停止' : '风险数据暂不可用';
-    $('risk-subtitle').textContent=`查询目标 ${ip}`;
-    $('lookup-result').textContent=signal.aborted ? '查询已停止' : errText(error);
-    if(!signal.aborted) $('risk-source').textContent='没有查询到的数据保持未知，不作纯净判断。';
-    throw error;
-  }
-}
-
-async function detectServices(signal) {
-  resetServices();renderServices();
-  await pool(services,3,signal,async service=>{
-    const result=state.services.find(x=>x.id===service.id);result.status='running';renderServices();
-    const started=performance.now();
-    try {
-      await timed(signal,7000,async ownSignal=>{
-        const url=new URL(`https://${service.domain}${service.path}`);url.searchParams.set('_sl',`${Date.now()}-${Math.random().toString(16).slice(2)}`);
-        const response=await fetch(url,{signal:ownSignal,mode:'no-cors',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer'});
-        if(response.type==='opaqueredirect'||response.type==='error') throw new Error('未获得可确认的网络响应');
-        // Opaque responses conceal HTTP status. Never equate this with service unlock.
-        if(response.body) await response.body.cancel();
-      });
-      Object.assign(result,{status:'done',ms:performance.now()-started});
-    } catch(error) {Object.assign(result,{status:signal.aborted ? 'stopped' : 'failed',error:signal.aborted ? '已停止' : errText(error)});}
-    renderServices();
-  });
-  signal.throwIfAborted();
-}
-
-async function runAll(signal) {
-  state.report=null;resetServices();renderServices();state.lastStarted=new Date().toISOString();
-  $('last-run').textContent='正在观察出口…';
-  await detectExits(signal);
-  $('last-run').textContent='正在检查服务与风险标记…';
-  const riskTask=state.primary ? lookupRisk(state.primary.ip,signal).catch(error=>{if(signal.aborted)throw error;}) : Promise.resolve();
-  await Promise.all([detectServices(signal),riskTask]);
-  signal.throwIfAborted();
-  const time=new Date().toISOString();
-  const label=$('node-label').value.trim();
-  state.report={ app:'SpeedLens',version:'1.0.0',time,startedAt:state.lastStarted,label, exits:structuredClone(state.sources),routing:compareExits(state.sources),risk:state.info,services:structuredClone(state.services),notes:['所有出口与网站连通性请求从浏览器发起。','网站已响应不代表账户可用、地区解锁或 HTTP 200。','风险字段来自第三方，未标记不代表保证纯净。','这是检测点采样，不能推断全部域名的实际出口。'] };
-  const entry={time,label,exits:state.sources.filter(x=>validIp(x.ip)).map(x=>({name:exitSources.find(s=>s.id===x.id).name,ip:x.ip})),responded:state.services.filter(x=>x.status==='done').length,total:services.length};
-  history=safeHistory([entry,...history]);
-  try {localStorage.setItem(HISTORY_KEY,JSON.stringify(history));} catch {notice('检测已完成，但此浏览器不允许保存本地历史。仍可导出本次报告。');}
-  renderHistory();$('last-run').textContent=`最近检测 ${dateLabel(time)}`;
-  toast('全面检测完成，可备注节点后切换 VPN 进行对照。');
-}
+function renderHistory(){const host=$('history-list');$('clear-history').disabled=!history.length;if(!history.length){host.replaceChildren(element('div','empty','还没有完整检测记录。点击上方“全面检测”，保存本次节点对照。'));return;}const header=element('div','history-row history-head');['时间','节点备注','检测出口','服务响应'].forEach(text=>header.append(element('div','',text)));host.replaceChildren(header,...history.map(item=>{const row=element('div','history-row');const addresses=element('div','');item.exits.slice(0,3).forEach(exit=>addresses.append(element('small','',`${exit.name} · ${maskIp(exit.ip,state.hidden)}`)));if(!item.exits.length)addresses.textContent='无可读出口';row.append(element('div','',dateLabel(item.time)),element('div','',item.label||'未备注'),addresses,element('div','',`${item.responded} / ${item.total} 已响应`));return row;}));}
+function renderDual(){const host=$('dual-result');if(!state.dual.length)return;host.replaceChildren(...state.dual.map(item=>{const row=element('div','');row.append(`${item.name}：`);if(item.ip)row.append(ipButton(item.ip));else row.append(item.error||'检测中…');return row;}));}
+function renderAll(){renderSources();renderQuick();renderServices();renderSplit();renderHistory();renderDual();if(state.modal)renderDialog();}
+function updateControls(){for(const id of ['run-all','run-network','run-split','run-services','run-dual','run-webrtc','run-speed'])$(id).disabled=state.busy;$('stop-button').hidden=!state.busy;$('export-report').disabled=state.busy||!state.report;}
+async function start(label,task){if(state.busy)return;state.busy=true;state.controller=new AbortController();const signal=state.controller.signal;notice('');$('activity').textContent=label;updateControls();try{await task(signal);signal.throwIfAborted();$('activity').textContent=`最近完成 ${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})} · ${label}`;}catch(error){if(signal.aborted){$('activity').textContent='检测已停止';toast('已停止检测，未保存不完整记录。');}else{notice(errorText(error));$('activity').textContent='检测未完成，可重试';}}finally{for(const item of [...state.sources,...state.quick,...state.sites,...state.split])if(item.status==='running')item.status='stopped';state.busy=false;state.controller=null;updateControls();renderAll();maybeAuto();}}
+async function runSources(signal){state.sources=reset(exitSources);renderSources();await eachLimit(exitSources,3,signal,async target=>{const result=state.sources.find(item=>item.id===target.id);result.status='running';renderSources();try{Object.assign(result,await probeExit(target,signal),{status:'done'});}catch(error){result.status=signal.aborted?'stopped':'failed';result.error=signal.aborted?'已停止':errorText(error);}renderSources();});signal.throwIfAborted();}
+async function runReachability(targets,results,signal,render){await eachLimit(targets,3,signal,async target=>{const result=results.find(item=>item.id===target.id);result.status='running';render();const started=performance.now();try{await deadline(signal,7000,async ownSignal=>{const url=new URL(`https://${target.domain}${target.path}`);url.searchParams.set('_sl',`${Date.now()}-${Math.random().toString(16).slice(2)}`);const response=await fetch(url,{mode:'no-cors',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal:ownSignal});if(response.type==='error'||response.type==='opaqueredirect')throw new Error('没有可确认的网络响应');if(response.body)await response.body.cancel();});result.status='done';result.ms=performance.now()-started;if(targets===quickServices){const samples=quickSamples.get(target.id)||[];quickSamples.set(target.id,[...samples,result.ms].slice(-6));}}catch(error){result.status=signal.aborted?'stopped':'failed';result.error=errorText(error);}render();});signal.throwIfAborted();}
+async function runNetwork(signal){state.quick=reset(quickServices);renderQuick();await Promise.all([runSources(signal),runReachability(quickServices,state.quick,signal,renderQuick)]);state.networkDone=true;}
+async function runServices(signal){state.sites=reset(services);renderServices();await runReachability(services,state.sites,signal,renderServices);state.sitesDone=true;}
+async function runSplit(signal){state.split=reset(splitTargets);renderSplit();await eachLimit(splitTargets,3,signal,async target=>{const result=state.split.find(item=>item.id===target.id);result.status='running';renderSplit();try{Object.assign(result,await probeExit(target,signal),{status:'done',geoStatus:'loading'});renderSplit();try{result.info=await infoFor(result.ip,signal);result.geoStatus='done';}catch(error){if(signal.aborted)throw error;result.geoStatus='failed';result.geoError=errorText(error);}}catch(error){result.status=signal.aborted?'stopped':'failed';result.error=errorText(error);}renderSplit();});signal.throwIfAborted();state.splitDone=true;}
+async function runAll(signal){state.report=null;updateControls();await runNetwork(signal);$('activity').textContent='正在读取各网站实际出口…';await runSplit(signal);$('activity').textContent='正在检查网站服务…';await runServices(signal);signal.throwIfAborted();const time=new Date().toISOString(),label=$('node-label').value.trim();state.report={app:'SpeedLens',version:'1.1.0',time,label,exits:structuredClone(state.sources),split:structuredClone(state.split),services:structuredClone(state.sites),notes:['出口请求由浏览器发起；探针域名可能与主站规则不同。','可读出口不是账号可用或地区解锁证明。','导出包含真实 IP，隐私开关仅影响页面显示。']};history=safeHistory([{time,label,exits:state.sources.filter(x=>x.ip).map(x=>({name:exitSources.find(target=>target.id===x.id).name,ip:x.ip})),responded:state.sites.filter(x=>x.status==='done').length,total:services.length},...history]);if(!store('speedlens.history.v1',history))notice('检测完成，但浏览器不允许保存历史；仍可导出本次报告。');renderHistory();toast('全面检测完成，记录已保存到本机。');}
+function renderDialog(){const modal=state.modal;if(!modal)return;const host=$('ip-dialog-body');host.replaceChildren(element('div','modal-ip',maskIp(modal.ip,state.hidden)));const copy=element('button','button secondary','复制真实 IP');copy.addEventListener('click',()=>copyText(modal.ip));const tail=element('div','modal-actions');tail.append(element('span','','IP 风险信息来自第三方，不保证服务解锁或原生住宅。'),copy);if(modal.status==='loading'){host.append(element('p','modal-source loading','正在查询 IPQuery…'),tail);return;}if(modal.error){host.append(element('p','notice',modal.error),element('p','footnote','没有数据的字段保持未知，不作纯净判断。'),tail);return;}const data=modal.data;host.append(element('p','modal-source',`来源 ${data.source} · ${dateLabel(data.checkedAt)}${data.cached?' · 缓存':''}`));const grid=element('div','detail-grid');for(const [label,value]of [['归属地',place(data)],['网络 / ISP',state.hidden?'已隐藏':data.isp||'未知'],['ASN',data.asn?(state.hidden?'AS****':`AS${data.asn}`):'未知'],['时区',state.hidden?'已隐藏':data.timezone||'未知']]){const item=element('div','');item.append(element('span','',label),element('strong','',value));grid.append(item);}host.append(grid);const summary=riskSummary(data.flags);host.append(element('h3',`risk-heading ${summary.kind==='flagged'?'flagged':summary.kind==='clear'?'success':''}`,summary.title));if(Number.isFinite(data.riskScore)){host.append(element('div','risk-score',`IPQuery 风险分：${data.riskScore} / 100 · 越低表示其评估风险越少`));const meter=element('div','risk-meter');const bar=element('div','');bar.style.width=`${data.riskScore}%`;meter.append(bar);host.append(meter);}const risks=element('div','risk-grid');for(const[key,label]of riskFields){const value=data.flags?.[key],row=element('div','risk-row');row.append(element('span','',label),element('span',typeof value!=='boolean'?'muted':value?'flagged':'success',typeof value!=='boolean'?'未知':value?'已标记':'未标记'));risks.append(row);}host.append(risks,element('p','footnote',data.notice||'数据库未标记，不代表没有风险。'),tail);}
+async function openIp(ip){if(!validIp(ip)){notice('请输入有效的公网 IPv4 或 IPv6 地址');return;}const token=++state.modalToken;state.modal={ip,status:'loading'};renderDialog();if(!$('ip-dialog').open)$('ip-dialog').showModal();try{const data=await infoFor(ip);if(token!==state.modalToken)return;state.modal={ip,status:'done',data};for(const result of [...state.sources,...state.split])if(canonicalIp(result.ip)===canonicalIp(ip))result.info=data;renderAll();}catch(error){if(token!==state.modalToken)return;state.modal={ip,status:'failed',error:errorText(error)};renderDialog();}}
+function closeDialog(){$('ip-dialog').close();state.modal=null;state.modalToken++;}
+async function copyText(text){try{await navigator.clipboard.writeText(text);toast('真实 IP 已复制');}catch{toast('浏览器不允许自动复制，请关闭脱敏后手动选择。');}}
+async function runDual(signal){const targets=[{id:'v4',name:'IPv4',url:'https://api.ipify.org?format=json',probe:'json'},{id:'v6',name:'IPv6',url:'https://api6.ipify.org?format=json',probe:'json'}];state.dual=targets.map(x=>({id:x.id,name:x.name}));renderDual();await eachLimit(targets,2,signal,async target=>{const item=state.dual.find(x=>x.id===target.id);try{Object.assign(item,await probeExit(target,signal));}catch(error){item.error=signal.aborted?'已停止':'未确认：未启用、网络或检测点限制均有可能';}renderDual();});signal.throwIfAborted();}
 
 async function detectWebrtc(signal) {
   const output=$('webrtc-result');output.textContent='正在收集候选地址（最多 6 秒）…';
@@ -329,59 +128,16 @@ async function detectSpeed(signal) {
   } catch(error) {output.textContent=signal.aborted ? '测速已停止' : errText(error);throw error;}
 }
 
-function exportReport() {
-  if(!state.report)return;
-  const blob=new Blob([JSON.stringify(state.report,null,2)],{type:'application/json;charset=utf-8'});
-  const url=URL.createObjectURL(blob);const link=element('a','');
-  link.href=url;link.download=`speedlens-${state.report.time.replace(/[:.]/g,'-')}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),3000);
-}
-
-function updateOnline() {
-  $('online-status').textContent=navigator.onLine ? '浏览器在线' : '浏览器离线';
-  $('online-status').classList.toggle('offline',!navigator.onLine);
-  const connection=navigator.connection?.effectiveType;
-  $('browser-network').textContent=navigator.onLine ? connection ? `在线 / ${connection.toUpperCase()} 估计` : '在线' : '离线';
-}
-function updateThemeLabel() {
-  const dark=document.documentElement.dataset.theme==='dark';
-  $('theme-button').textContent=dark ? '☼' : '☾';
-  $('theme-button').setAttribute('aria-label',dark ? '切换浅色主题' : '切换深色主题');
-}
-
-$('run-all').addEventListener('click',()=>start('all',runAll));
-$('run-exits').addEventListener('click',()=>start('exits',async signal=>{await detectExits(signal);if(state.primary)await lookupRisk(state.primary.ip,signal);}));
-$('run-services').addEventListener('click',()=>start('services',detectServices));
-$('run-speed').addEventListener('click',()=>start('speed',detectSpeed));
-$('run-webrtc').addEventListener('click',()=>start('webrtc',detectWebrtc));
-$('stop-button').addEventListener('click',()=>{state.controller?.abort(new DOMException('用户停止检测','AbortError'));$('last-run').textContent='检测已停止';});
-$('lookup-form').addEventListener('submit',event=>{event.preventDefault();start('risk',signal=>lookupRisk($('lookup-ip').value.trim(),signal));});
-$('copy-ip').addEventListener('click',async()=>{if(!state.primary)return;try {await navigator.clipboard.writeText(state.primary.ip);toast('IP 已复制');}catch {toast('当前浏览器不允许复制，请选择 IP 文字手动复制。');}});
-$('theme-button').addEventListener('click',()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark' ? 'light' : 'dark';updateThemeLabel();try {localStorage.setItem('speedlens.theme',document.documentElement.dataset.theme);}catch {}});
-$('clear-history').addEventListener('click',()=>{history=[];try {localStorage.removeItem(HISTORY_KEY);renderHistory();toast('本机检测记录已清除。');}catch {renderHistory();notice('此浏览器不允许修改存储，记录可能在刷新后重新出现。');}});
-$('export-report').addEventListener('click',exportReport);
-$('node-label').addEventListener('input',()=>{
-  if(state.busy||!state.report)return;
-  const label=$('node-label').value.trim();
-  state.report.label=label;
-  const entry=history.find(item=>item.time===state.report.time);
-  if(entry) {
-    entry.label=label;
-    try{localStorage.setItem(HISTORY_KEY,JSON.stringify(history));}catch{notice('备注已更新到本次报告，但浏览器不允许保存到历史。');}
-    renderHistory();
-  }
-});
-$('service-filters').replaceChildren(...Object.entries(groups).map(([key,label])=>{
-  const button=element('button',`filter${key==='all' ? ' active' : ''}`,label);button.type='button';button.setAttribute('aria-pressed',String(key==='all'));
-  button.addEventListener('click',()=>{state.filter=key;for(const item of $('service-filters').children){item.classList.toggle('active',item===button);item.setAttribute('aria-pressed',String(item===button));}renderServices();});
-  return button;
-}));
-for(const link of document.querySelectorAll('.nav-link')) link.addEventListener('click',()=>{for(const item of document.querySelectorAll('.nav-link'))item.classList.toggle('active',item===link);});
-if('IntersectionObserver' in window) {
-  const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting)for(const link of document.querySelectorAll('.nav-link'))link.classList.toggle('active',link.hash===`#${entry.target.id}`);},{rootMargin:'-10% 0px -70% 0px'});
-  document.querySelectorAll('main>section').forEach(section=>observer.observe(section));
-}
-window.addEventListener('online',updateOnline);window.addEventListener('offline',updateOnline);
-window.addEventListener('pagehide',()=>state.controller?.abort());
-updateOnline();updateThemeLabel();resetSources();resetServices();renderSources();renderServices();renderRisk();renderHistory();
-// No third-party request is sent before the visitor starts a diagnostic.
-requestJson('/api/context').then(context=>{state.context=context;$('node-description').textContent=`浏览器视角 · 辅助测速节点：${context.node}`;}).catch(()=>{});
+function exportReport(){if(!state.report)return;const blob=new Blob([JSON.stringify(state.report,null,2)],{type:'application/json;charset=utf-8'});const url=URL.createObjectURL(blob),link=element('a','');link.href=url;link.download=`speedlens-${state.report.time.replace(/[:.]/g,'-')}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),3000);}
+function setFilters(id,values,getValue,setValue,render){$(id).replaceChildren(...Object.entries(values).map(([key,label])=>{const button=element('button',`filter ${getValue()===key?'active':''}`,label);button.setAttribute('aria-pressed',String(getValue()===key));button.addEventListener('click',()=>{setValue(key);setFilters(id,values,getValue,setValue,render);render();});return button;}));}
+function updatePreferences(){document.documentElement.dataset.theme=readStorage('speedlens.theme','light')==='dark'?'dark':'light';const dark=document.documentElement.dataset.theme==='dark';$('theme-button').textContent=dark?'☼':'☾';$('theme-button').setAttribute('aria-label',dark?'切换浅色主题':'切换深色主题');$('privacy-button').textContent=state.hidden?'◌':'◉';$('privacy-button').setAttribute('aria-label',state.hidden?'显示完整 IP':'隐藏完整 IP');$('privacy-button').setAttribute('aria-pressed',String(!state.hidden));$('auto-check').checked=state.auto;}
+function maybeAuto(){if(!state.auto||state.busy||document.hidden)return;if(state.route==='network'&&!state.networkDone)start('首页网络检测',runNetwork);if(state.route==='split'&&!state.splitDone)start('网站分流检测',runSplit);if(state.route==='services'&&!state.sitesDone)start('网站服务检测',runServices);}
+function route(){const requested=location.hash.replace(/^#\//,'');state.route=['network','split','services','tools','history'].includes(requested)?requested:'network';for(const id of ['network','split','services','tools','history'])$(`page-${id}`).hidden=id!==state.route;for(const link of document.querySelectorAll('[data-route]')){const active=link.dataset.route===state.route;link.classList.toggle('active',active);if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}document.title=`${{network:'网络状态',split:'分流测试',services:'网站服务',tools:'检测工具',history:'检测记录'}[state.route]} · SpeedLens`;maybeAuto();}
+$('run-all').addEventListener('click',()=>start('全面检测',runAll));$('run-network').addEventListener('click',()=>start('首页网络检测',runNetwork));$('run-split').addEventListener('click',()=>start('网站分流检测',runSplit));$('run-services').addEventListener('click',()=>start('网站服务检测',runServices));$('run-dual').addEventListener('click',()=>start('双栈出口检测',runDual));$('run-webrtc').addEventListener('click',()=>start('WebRTC 检测',detectWebrtc));$('run-speed').addEventListener('click',()=>start('轻量测速',detectSpeed));
+$('stop-button').addEventListener('click',()=>{state.auto=false;store('speedlens.auto',false);$('auto-check').checked=false;state.controller?.abort(new DOMException('用户停止检测','AbortError'));});
+$('lookup-form').addEventListener('submit',event=>{event.preventDefault();openIp($('lookup-ip').value.trim());});$('close-dialog').addEventListener('click',closeDialog);$('ip-dialog').addEventListener('cancel',()=>{state.modal=null;state.modalToken++;});$('ip-dialog').addEventListener('click',event=>{if(event.target===$('ip-dialog')){const rect=$('ip-dialog').getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)closeDialog();}});
+$('privacy-button').addEventListener('click',()=>{state.hidden=!state.hidden;store('speedlens.privacy',state.hidden);updatePreferences();renderAll();});$('theme-button').addEventListener('click',()=>{store('speedlens.theme',document.documentElement.dataset.theme==='dark'?'light':'dark');updatePreferences();});$('auto-check').addEventListener('change',()=>{state.auto=$('auto-check').checked;store('speedlens.auto',state.auto);maybeAuto();});
+$('clear-history').addEventListener('click',()=>{history=[];if(!store('speedlens.history.v1',[]))notice('浏览器不允许修改存储，刷新后可能重新出现旧记录。');renderHistory();});$('export-report').addEventListener('click',exportReport);$('node-label').addEventListener('input',()=>{if(state.busy||!state.report)return;state.report.label=$('node-label').value.trim();const item=history.find(x=>x.time===state.report.time);if(item){item.label=state.report.label;store('speedlens.history.v1',history);renderHistory();}});
+setFilters('split-filters',{all:'全部',local:'国内',global:'国际',ai:'AI 服务',dev:'开发与 CDN'},()=>state.splitFilter,value=>state.splitFilter=value,renderSplit);setFilters('service-filters',groups,()=>state.serviceFilter,value=>state.serviceFilter=value,renderServices);
+window.addEventListener('hashchange',route);window.addEventListener('pagehide',()=>state.controller?.abort());document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeAuto();});window.addEventListener('offline',()=>notice('浏览器已离线，检测结果可能无法更新。'));window.addEventListener('online',()=>notice(''));
+updatePreferences();renderAll();updateControls();$('activity').textContent=state.auto?'进入页面自动检测 · 无持续轮询':'自动检测已关闭 · 可手动开始';route();

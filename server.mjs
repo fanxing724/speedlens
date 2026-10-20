@@ -57,7 +57,7 @@ async function upstreamJson(url, headers = {}) {
   return JSON.parse(body);
 }
 
-const MIME = { '/': 'text/html; charset=utf-8', '/styles.css': 'text/css; charset=utf-8', '/app.mjs': 'text/javascript; charset=utf-8', '/core.mjs': 'text/javascript; charset=utf-8', '/catalog.mjs': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml' };
+const MIME = { '/': 'text/html; charset=utf-8', '/styles.css': 'text/css; charset=utf-8', '/app.mjs': 'text/javascript; charset=utf-8', '/core.mjs': 'text/javascript; charset=utf-8', '/catalog.mjs': 'text/javascript; charset=utf-8', '/probes.mjs': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml' };
 const assets = new Map(await Promise.all(Object.entries(MIME).map(async ([path,type]) => [path,{ type, body: await readFile(new URL(`public/${path === '/' ? 'index.html' : path.slice(1)}`, import.meta.url)) }])));
 
 export function createApp(options = {}) {
@@ -111,11 +111,11 @@ export function createApp(options = {}) {
     try {
       const url = new URL(req.url,'http://localhost');
       const ip = clientIp(req,trustProxy);
-      if (req.method === 'GET' && url.pathname === '/healthz') return json(res,200,{ status:'ok', app:'speedlens', version:'1.0.0' });
-      if (req.method === 'GET' && url.pathname === '/api/context') return json(res,200,{ ip, public:publicIp(ip), node:process.env.RENDER_REGION || (process.env.RENDER ? 'Render' : '本地测试节点'), version:'1.0.0' });
+      if (req.method === 'GET' && url.pathname === '/healthz') return json(res,200,{ status:'ok', app:'speedlens', version:'1.1.0' });
+      if (req.method === 'GET' && url.pathname === '/api/context') return json(res,200,{ ip, public:publicIp(ip), node:process.env.RENDER_REGION || (process.env.RENDER ? 'Render' : '本地测试节点'), version:'1.1.0' });
       if (req.method === 'GET' && url.pathname === '/api/ping') { res.writeHead(204,{'Cache-Control':'no-store'}); return res.end(); }
       if (req.method === 'GET' && url.pathname === '/api/lookup') {
-        if (!permit(`lookup:${ip}`,15)) return json(res,429,{ error:'查询过于频繁，一分钟后再试' });
+        if (!permit(`lookup:${ip}`,60)) return json(res,429,{ error:'查询过于频繁，一分钟后再试' });
         const target = url.searchParams.get('ip')?.trim();
         if (!publicIp(target)) return json(res,400,{ error:'请输入有效的公网 IPv4 或 IPv6 地址' });
         try { return json(res,200,await lookup(target)); } catch (e) { return json(res,503,{ error:e.message }); }

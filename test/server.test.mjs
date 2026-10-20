@@ -59,6 +59,6 @@ test('speed tokens enforce exact byte budgets, single use and upload limits',asy
 test('cross-site session creation and excessive lookup requests are rejected',async()=>withApp(async base=>{
   const cross=await fetch(`${base}/api/speed/session`,{method:'POST',headers:{'sec-fetch-site':'cross-site'}});assert.equal(cross.status,403);
   let last;
-  for(let i=0;i<16;i++) last=await fetch(`${base}/api/lookup?ip=invalid`);
+  for(let i=0;i<61;i++) last=await fetch(`${base}/api/lookup?ip=invalid`);
   assert.equal(last.status,429);assert.equal(last.headers.get('retry-after'),'60');
 }));

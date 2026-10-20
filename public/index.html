@@ -1,73 +1,58 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101719"><meta name="description" content="SpeedLens 网络透镜：从浏览器检查 VPN 出口、IP 风险、分流路径与常用网站连通性。">
-  <title>SpeedLens · 网络透镜</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css">
-  <script type="module" src="/app.mjs"></script>
+  <meta name="theme-color" content="#ff8726"><meta name="description" content="SpeedLens 网络透镜：出口 IP、IP 纯净度、网站分流与服务连通性检测。">
+  <title>SpeedLens · 网络透镜</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css"><script type="module" src="/app.mjs"></script>
 </head>
 <body>
-  <a class="skip" href="#overview">跳到主要内容</a>
-  <aside class="sidebar">
-    <a href="#overview" class="brand"><img src="/favicon.svg" width="37" height="37" alt=""><span>SpeedLens<small>网络透镜</small></span></a>
-    <div class="nav-label">工作台 / WORKSPACE</div>
-    <nav aria-label="主导航">
-      <a class="nav-link active" href="#overview"><span>◈</span>网络概览<small>01</small></a>
-      <a class="nav-link" href="#routing"><span>⇄</span>出口与分流<small>02</small></a>
-      <a class="nav-link" href="#services"><span>▦</span>网站服务<small>03</small></a>
-      <a class="nav-link" href="#tools"><span>⌁</span>进阶检测<small>04</small></a>
-      <a class="nav-link" href="#history"><span>◷</span>检测记录<small>05</small></a>
-    </nav>
-    <div class="sidebar-bottom"><div class="privacy-icon">⌑</div><strong>你的网络，你来掌握。</strong><p>检测从此浏览器发起。<br>历史记录只保存在本机。</p><a href="https://github.com/fanxing724/speedlens" target="_blank" rel="noopener noreferrer">开源项目 <span>↗</span></a><div class="version">SPEEDLENS / V1.0</div></div>
-  </aside>
-  <div class="workspace">
-    <header class="topbar"><div><span class="top-dot"></span> PERSONAL NETWORK LAB <span class="top-divider">/</span> <span class="top-cn">个人网络诊断台</span></div><div class="top-actions"><span id="online-status" class="online">浏览器在线</span><button class="icon-button" id="theme-button" aria-label="切换浅色主题" title="切换主题">☼</button><a class="icon-button" href="https://github.com/fanxing724/speedlens" target="_blank" rel="noopener noreferrer" aria-label="查看 GitHub 源码">↗</a></div></header>
-    <main>
-      <section id="overview" class="intro">
-        <div><div class="eyebrow"><span></span> A CLEARER VIEW OF YOUR CONNECTION</div><h1>看清每一条网络去向<span>。</span></h1><p>出口是否一致，分流是否生效，常用服务能否连接。让每次切换节点，都有据可查。</p></div>
-        <div class="intro-actions"><button class="button primary" id="run-all"><span>◎</span> 开始全面检测 <span>↗</span></button><button class="button stop" id="stop-button" hidden>停止检测</button><small id="last-run">尚未检测 · 点击后开始</small></div>
-      </section>
-      <div class="consent">检测将连接下方列出的第三方站点；IP 风险查询会将目标 IP 发送至 IPQuery，失败时使用 ipwho.is。不会收集账号或聊天内容。</div>
-      <div id="notice" class="notice" role="status" hidden></div>
-      <div class="overview-grid">
-        <article class="panel exit-panel">
-          <div class="panel-head"><span class="panel-label"><span class="lime-dot"></span> 当前观察出口</span><span class="badge" id="exit-protocol">等待检测</span></div>
-          <div class="exit-hero"><div><div class="big-ip" id="primary-ip">等待发现你的出口</div><p class="ip-location" id="primary-location">点击「开始全面检测」，从不同站点观察当前网络。</p></div><div class="orbit" aria-hidden="true"><i></i><i></i><i></i><b>◎</b><span class="satellite"></span></div></div>
-          <div class="ip-meta"><div><span>网络 / ASN</span><strong id="primary-isp">—</strong></div><div><span>观察来源</span><strong id="primary-source">—</strong></div><div><span>浏览器状态</span><strong id="browser-network">—</strong></div></div>
-          <div class="panel-foot"><span id="node-description">浏览器视角 · 不经过后端代测</span><button class="text-button" id="copy-ip" disabled>复制 IP ↗</button></div>
-        </article>
-        <article class="panel risk-panel" id="risk">
-          <div class="panel-head"><span class="panel-label">IP 纯净度 / 风险画像</span><span class="badge" id="risk-badge">未查询</span></div>
-          <div class="risk-heading"><span class="risk-symbol" id="risk-symbol">◇</span><div><h2 id="risk-title">等待风险数据</h2><p id="risk-subtitle">按数据源实际字段显示，不使用虚构分数。</p></div></div>
-          <div class="risk-list" id="risk-list"></div>
-          <div class="risk-source" id="risk-source">数据覆盖与结果受第三方数据库更新影响。</div>
-        </article>
-      </div>
-      <section id="routing" class="section">
-        <div class="section-head"><div><div class="eyebrow muted">01 / EXIT & ROUTING</div><h2>出口与分流对照 <span class="count">4 个检测点</span></h2><p>分别请求国内、国际与 IPv4 / IPv6 检测点，观察它们看到的 IP。</p></div><button class="button secondary" id="run-exits">↻ 重新检测出口</button></div>
-        <div class="source-grid" id="source-grid"></div>
-        <div class="routing-verdict" id="routing-verdict"><span class="verdict-icon">⇄</span><div><strong id="routing-title">等待出口对照</strong><p id="routing-detail">不同检测点可能命中不同的 VPN 规则。只有检测点返回 IP 后，才能进行对照。</p></div><span class="subtle">BROWSER → DESTINATION</span></div>
-        <div class="inline-note">出口不同是分流线索；出口相同也不能证明 VPN 未开启。IPv6 检测失败可能是未启用、路由问题或检测点不可用，不直接判定泄漏。</div>
-      </section>
-      <section id="services" class="section">
-        <div class="section-head"><div><div class="eyebrow muted">02 / SERVICE REACHABILITY</div><h2>常用网站与服务 <span class="count" id="service-count">18 个目标</span></h2><p>从当前浏览器发出 HTTPS 请求，检查节点对日常服务的连接表现。</p></div><button class="button secondary" id="run-services">↻ 检测网站服务</button></div>
-        <div class="service-toolbar"><div class="filters" id="service-filters" role="group" aria-label="网站分类筛选"></div><span id="service-summary">尚未检测</span></div>
-        <div class="service-grid" id="service-grid"></div>
-        <div class="inline-note"><span class="note-dot"></span>跨域请求可能无法读取 HTTP 状态。「已响应」仅说明收到网络响应，可能包括 403 或验证页；不代表 ChatGPT 可用、流媒体解锁或账号正常。「未确认」也可能由浏览器策略、插件或站点限制导致。</div>
-      </section>
-      <section id="tools" class="section">
-        <div class="section-head"><div><div class="eyebrow muted">03 / A CLOSER LOOK</div><h2>需要时，再看深一点</h2><p>查询任意公网 IP，检查 WebRTC 候选地址，或做一次轻量连接采样。</p></div></div>
-        <div class="tools-grid">
-          <article class="panel tool"><div class="tool-heading"><span class="tool-icon">⌖</span><h3>查询 IP 风险</h3><span class="mini-label">LOOKUP</span></div><p>查询节点的归属地、ASN 和风险标记。结果会展示在上方风险画像中。</p><form id="lookup-form"><label class="sr-only" for="lookup-ip">公网 IP 地址</label><div class="input-group"><input id="lookup-ip" placeholder="输入 IPv4 或 IPv6" maxlength="45" autocomplete="off" spellcheck="false"><button class="button secondary" id="lookup-submit" type="submit">查询 ↗</button></div></form><div id="lookup-result" class="tool-result" role="status">仅查询公网地址 · 不扫描目标端口</div></article>
-          <article class="panel tool"><div class="tool-heading"><span class="tool-icon">⌁</span><h3>WebRTC 地址观察</h3><span class="mini-label">PRIVACY</span></div><p>主动联系 Google STUN，显示浏览器可见的候选地址。不请求相机或麦克风权限。</p><button class="button secondary" id="run-webrtc">检查候选地址 ↗</button><div id="webrtc-result" class="tool-result" role="status">未开始 · 无结果不等于没有泄漏</div></article>
-          <article class="panel tool"><div class="tool-heading"><span class="tool-icon">↯</span><h3>轻量测速</h3><span class="mini-label">5 MiB MAX</span></div><p>向本站 Render 节点下载 4 MiB、上传 1 MiB；用于快速对照节点，非宽带峰值测试。</p><button class="button secondary" id="run-speed">开始轻量测速 ↗</button><div id="speed-result" class="tool-result" role="status">下载 — &nbsp; 上传 — &nbsp; HTTP 延迟 —</div></article>
-        </div>
-        <details class="methodology"><summary>这些检测能说明什么？ <span>＋</span></summary><div><p><strong>分流：</strong>只有返回 IP 的检测点能提供出口证据。对 ChatGPT 等普通网站，我们通常无法得知该站看到的源 IP，需要结合 VPN 客户端连接日志判断命中规则。</p><p><strong>IP 纯净度：</strong>查询 IPQuery 的 VPN、代理、Tor、数据中心标记和风险分；其未提供的滥用记录保持未知。没有标记不能保证原生住宅、账号注册成功或永不触发风控；数据中心也不等于恶意。</p><p><strong>网站测试：</strong>并发 3 个、每个最多 7 秒；使用无凭据的 no-cors 请求，不读取你的登录信息。跨域隔离或防追踪策略可能影响结果；毫秒值是浏览器请求耗时，不是 ICMP Ping。</p><p><strong>WebRTC：</strong>只显示本次 ICE 收集到的 host / srflx 候选；mDNS 地址不是可直接读取的 IP。观察到与 HTTPS 不同的公网 IP 值得检查，但双栈与不同路由也会造成差异。本工具不提供完整 DNS 泄漏测试。</p><p><strong>隐私：</strong>第三方检测站点会看到你的连接 IP。风险查询经过本站后端，并把目标 IP 发送至标明的数据源；服务不保存检测历史、不使用分析追踪器。托管平台和第三方可能保留访问日志。历史记录保存在此浏览器，可随时清除。</p></div></details>
-      </section>
-      <section id="history" class="section history-section"><div class="section-head"><div><div class="eyebrow muted">04 / YOUR OBSERVATIONS</div><h2>节点切换，留下对照</h2><p>全面检测完成后保存，最近 20 条，仅在当前浏览器。</p></div><div class="history-actions"><button class="text-button" id="export-report" disabled>导出完整报告 ↓</button><button class="text-button danger" id="clear-history">清除记录</button></div></div><div class="history-label"><label for="node-label">本次节点备注</label><input id="node-label" maxlength="80" placeholder="例如：香港 01 · 规则模式（可选）" autocomplete="off"></div><div class="panel history-table" id="history-list"></div></section>
-      <footer><a href="#overview" class="footer-brand">◎ <strong>SpeedLens</strong><span>给网络一片清晰的透镜。</span></a><span>独立检测 · 结果有来源 · 记录在本机</span><a href="https://github.com/fanxing724/speedlens" target="_blank" rel="noopener noreferrer">源码与部署 ↗</a></footer>
-    </main>
-  </div>
-  <div id="toast" class="toast" role="status" hidden></div>
+<a class="skip" href="#main">跳到主要内容</a>
+<header class="header"><div class="header-inner">
+  <a class="brand" href="#/network"><span class="brand-symbol">◎</span><strong>SpeedLens</strong><span class="brand-subtitle">网络透镜</span></a>
+  <nav aria-label="主导航"><a href="#/network" data-route="network">◉ 网络状态</a><a href="#/split" data-route="split">⑂ 分流测试</a><a href="#/services" data-route="services">▦ 网站服务</a><a href="#/tools" data-route="tools">⌁ 检测工具</a><a href="#/history" data-route="history">◷ 检测记录</a></nav>
+  <div class="header-actions"><button id="privacy-button" class="icon-button" aria-label="显示完整 IP" title="切换 IP 脱敏">◌</button><button id="theme-button" class="icon-button" aria-label="切换深色主题">☾</button></div>
+</div></header>
+<main id="main">
+  <section class="banner"><div class="banner-icon">⌖</div><div><h1>看清你的真实网络路径</h1><p>出口 IP、纯净度、网站分流，一处看清。切换节点后，再检查一次。</p></div><div class="banner-actions"><button class="button primary" id="run-all">全面检测 ↗</button><button class="button stop" id="stop-button" hidden>停止检测</button></div></section>
+  <div class="statusbar"><span id="activity" role="status">正在准备检测…</span><label><input id="auto-check" type="checkbox" checked> 进入页面自动检测</label></div>
+  <div class="notice" id="notice" role="status" hidden></div>
+  <section class="page panel" id="page-network" aria-labelledby="network-heading">
+    <div class="section-heading"><div><h2 id="network-heading">🌍 当前网络信息</h2><p>从浏览器观察不同站点看到的出口。IP 默认脱敏，点击地址可查询归属与风险。</p></div><button id="run-network" class="button secondary">↻ 刷新检测</button></div>
+    <div class="source-grid" id="source-grid"></div>
+    <div class="quick-grid" id="quick-grid"></div>
+    <div class="network-note" id="network-verdict">检测结果将提供出口对照线索，不代替 VPN 客户端的规则日志。</div>
+    <div class="footnote">自动检测会连接以上第三方站点，每次进入只运行一次，无持续轮询。IP 脱敏仅影响显示；复制与导出包含真实 IP。延迟为 HTTPS 请求耗时。</div>
+  </section>
+  <section class="page panel" id="page-split" hidden aria-labelledby="split-heading">
+    <div class="section-heading"><div><h2 id="split-heading">⑂ 网站分流测试</h2><p>读取各目标探针实际返回的出口 IP，再查询国家、归属地和 ASN。</p></div><button id="run-split" class="button secondary">↻ 重新检测</button></div>
+    <div class="table-toolbar"><div id="split-filters" class="filters" role="group" aria-label="分流目标分类"></div><span id="split-summary">等待检测</span></div>
+    <div class="split-scroll"><table class="split-table"><thead><tr><th>网站 / 探针</th><th>国家</th><th>出口 IP</th><th>归属地 / 网络</th><th>ASN</th></tr></thead><tbody id="split-body"></tbody></table></div>
+    <div class="footnote">这里显示的是实际探针域名所见的 IP；帮助站、CDN 子域名与主站可能命中不同规则。无法读取时保留“未确认”，不会用后端或其他站点的出口冒充。可读取 IP 也不代表账号或流媒体解锁。</div>
+  </section>
+  <section class="page panel" id="page-services" hidden aria-labelledby="services-heading">
+    <div class="section-heading"><div><h2 id="services-heading">▦ 网站与服务连通性</h2><p>检查常用 AI、影音、开发工具和国内站点能否返回网络响应。</p></div><button id="run-services" class="button secondary">↻ 重新检测</button></div>
+    <div class="table-toolbar"><div id="service-filters" class="filters" role="group" aria-label="网站服务分类"></div><span id="service-summary">等待检测</span></div>
+    <div class="service-grid" id="service-grid"></div>
+    <div class="footnote">跨域 no-cors 响应无法读取 HTTP 状态。「已响应」可能包括 403、验证页等，不保证服务可用或地区解锁；「未确认」也可能由浏览器策略、插件、DNS 或超时引起。</div>
+  </section>
+  <section class="page" id="page-tools" hidden aria-labelledby="tools-heading">
+    <div class="section-heading standalone"><div><h2 id="tools-heading">⌁ 网络检测工具</h2><p>需要时主动启动，不随首页检测运行。</p></div></div>
+    <div class="tools-grid">
+      <article class="panel tool"><h3>⌖ IP 纯净度与归属</h3><p>查询公网 IPv4 / IPv6 的归属地、ASN、代理、VPN、Tor 和机房标记。</p><form id="lookup-form"><label for="lookup-ip" class="sr-only">公网 IP</label><div class="input-group"><input id="lookup-ip" placeholder="输入 IPv4 或 IPv6 地址" maxlength="45" spellcheck="false"><button class="button primary" id="lookup-submit">查询 ↗</button></div></form><div class="tool-result">风险分来自 IPQuery，未提供的字段保持未知。</div></article>
+      <article class="panel tool"><h3>◌ IPv4 / IPv6 对照</h3><p>分别连接仅支持 IPv4、仅支持 IPv6 的检测点，检查双栈出口。</p><button id="run-dual" class="button secondary">检查双栈出口 ↗</button><div id="dual-result" class="tool-result">尚未检测</div></article>
+      <article class="panel tool"><h3>⌁ WebRTC 候选地址</h3><p>通过 Google STUN 收集可见候选，不请求摄像头或麦克风。</p><button id="run-webrtc" class="button secondary">检查候选地址 ↗</button><div id="webrtc-result" class="tool-result">没有候选不代表没有泄漏；mDNS 别名不是公网 IP。</div></article>
+      <article class="panel tool"><h3>↯ 轻量连接测速</h3><p>到本站节点的 HTTP 延迟与上传下载采样，最多使用 5 MiB。</p><button id="run-speed" class="button secondary">开始轻量测速 ↗</button><div id="speed-result" class="tool-result">下载 4 MiB / 上传 1 MiB · 非宽带峰值测试</div></article>
+    </div>
+  </section>
+  <section class="page panel" id="page-history" hidden aria-labelledby="history-heading">
+    <div class="section-heading"><div><h2 id="history-heading">◷ 节点检测记录</h2><p>全面检测完成后保存，最近 20 条，仅保存在此浏览器。</p></div><button id="clear-history" class="button secondary danger">清除记录</button></div>
+    <div class="history-toolbar"><label for="node-label">节点备注</label><input id="node-label" maxlength="80" placeholder="例如：香港 01 · 规则模式"><button id="export-report" class="button secondary" disabled>导出完整报告 ↓</button></div>
+    <div id="history-list"></div><div class="footnote">可在全面检测完成后补充备注；导出文件包含真实 IP，分享前请检查。</div>
+  </section>
+  <details class="methodology"><summary>检测说明与隐私 <span>＋</span></summary><div><p><strong>浏览器视角：</strong>出口、分流和网站请求均从你当前浏览器发起，经过此浏览器的 VPN 与规则；Render 后端只用于公网 IP 数据查询和可选测速。</p><p><strong>纯净度：</strong>IPQuery 返回 VPN、代理、Tor、机房标记及其风险分。未标记不保证原生住宅、不触发风控或服务可用；没有数据的滥用字段显示未知。备用 ipwho.is 仅提供归属地。</p><p><strong>分流边界：</strong>表格标明实际探针域名，只展示可以读取的出口。不同子域名、IPv4 / IPv6、缓存与浏览器策略都可能影响结论；失败不直接意味着 VPN 关闭或目标被封。</p><p><strong>数据与隐私：</strong>开启自动检测后会向列出的第三方请求 IP 与连通性。点击 IP 或运行分流表会把目标 IP 发送至本站后端和 IPQuery，失败时使用 ipwho.is。历史仅保存在本机；服务不接入广告或统计。平台与第三方可能保留访问日志。</p><p><strong>检测范围：</strong>服务连通性不是解锁测试，WebRTC 不是完整泄漏证明，本版本不提供完整 DNS 泄漏测试。关闭自动检测可改为手动启动。</p></div></details>
+</main>
+<footer><div><strong>◎ SpeedLens</strong> · 网络透镜 <span class="footer-divider">|</span> 出口有来源，结果可核对</div><div><span id="version-label">v1.1.0</span> · <a href="https://github.com/fanxing724/speedlens" target="_blank" rel="noopener noreferrer">开源与部署 ↗</a></div></footer>
+<dialog id="ip-dialog" aria-labelledby="ip-dialog-title"><div class="modal-top"><div><span class="eyebrow">IP DETAILS</span><h2 id="ip-dialog-title">IP 详情与风险画像</h2></div><button id="close-dialog" class="icon-button" aria-label="关闭 IP 详情">×</button></div><div id="ip-dialog-body"></div></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
