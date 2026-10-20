@@ -16,6 +16,10 @@ test('routing needs real observations from both vantage points',()=>{
   assert.equal(compareExits([{id:'domestic',ip:'1.1.1.1'},{id:'cloudflare',ip:'8.8.8.8'}]).kind,'different');
   assert.equal(compareExits([{id:'domestic',ip:'1.1.1.1'},{id:'cloudflare',ip:'2606:4700:4700::1111'}]).kind,'unknown');
 });
+test('a replacement domestic probe cannot establish domestic routing evidence',()=>{
+  const result=compareExits([{id:'domestic',ip:'1.1.1.1',viaFallback:true,host:'perfops.cloudflareperf.com'},{id:'cloudflare',ip:'8.8.8.8'}]);
+  assert.equal(result.kind,'unknown');
+});
 test('missing risk data never means clean; string values never become flags',()=>{
   assert.equal(riskSummary().kind,'unknown');
   assert.equal(riskSummary({is_vpn:false}).kind,'unknown');
@@ -28,4 +32,5 @@ test('median and stored history handle empty, malformed and excessive values',()
   const entry={time:new Date().toISOString(),label:'香港节点',exits:[{name:'Cloudflare',ip:'1.1.1.1'}],responded:12,total:18};
   assert.equal(safeHistory([entry,null,{...entry,responded:20},{...entry,exits:[{name:'bad',ip:'<img>'}]}]).length,1);
   assert.equal(safeHistory(Array(30).fill(entry)).length,20);assert.deepEqual(safeHistory({}),[]);
+  assert.deepEqual(safeHistory([{...entry,exits:[null]}, {...entry,exits:[undefined]}]),[]);
 });

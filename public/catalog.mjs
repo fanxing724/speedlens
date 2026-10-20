@@ -8,8 +8,8 @@ export const exitSources = [
 export const services = [
   { id:'google', name:'Google', domain:'www.google.com', group:'global', mark:'G', color:'#4285f4', path:'/generate_204' },
   { id:'youtube', name:'YouTube', domain:'www.youtube.com', group:'stream', mark:'▶', color:'#ed4444', path:'/favicon.ico' },
-  { id:'chatgpt', name:'ChatGPT', domain:'chatgpt.com', group:'ai', mark:'◎', color:'#58bca0', path:'/favicon.ico' },
-  { id:'claude', name:'Claude', domain:'claude.ai', group:'ai', mark:'✳', color:'#c99473', path:'/favicon.ico' },
+  { id:'chatgpt', name:'ChatGPT', domain:'chatgpt.com', group:'ai', mark:'◎', color:'#58bca0', path:'/cdn-cgi/trace' },
+  { id:'claude', name:'Claude', domain:'claude.ai', group:'ai', mark:'✳', color:'#c99473', path:'/cdn-cgi/trace' },
   { id:'gemini', name:'Gemini', domain:'gemini.google.com', group:'ai', mark:'✦', color:'#7a97e8', path:'/favicon.ico' },
   { id:'github', name:'GitHub', domain:'github.com', group:'dev', mark:'⌘', color:'#abb3c8', path:'/favicon.ico' },
   { id:'telegram', name:'Telegram', domain:'web.telegram.org', group:'global', mark:'➤', color:'#4ca7d1', path:'/favicon.ico' },
@@ -23,7 +23,7 @@ export const services = [
   { id:'qq', name:'腾讯', domain:'www.qq.com', group:'local', mark:'Q', color:'#65adcf', path:'/favicon.ico' },
   { id:'taobao', name:'淘宝', domain:'www.taobao.com', group:'local', mark:'淘', color:'#e19c62', path:'/favicon.ico' },
   { id:'cloudflare', name:'Cloudflare', domain:'www.cloudflare.com', group:'dev', mark:'☁', color:'#e0a05f', path:'/cdn-cgi/trace' },
-  { id:'npm', name:'npm', domain:'www.npmjs.com', group:'dev', mark:'npm', color:'#d87878', path:'/favicon.ico' },
+  { id:'npm', name:'npm', domain:'www.npmjs.com', group:'dev', mark:'npm', color:'#d87878', path:'/cdn-cgi/trace' },
 ];
 
 export const extraServices = [

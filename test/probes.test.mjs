@@ -23,6 +23,18 @@ test('browser exit probe reads CORS text and records the actual probe hostname',
   globalThis.fetch=async(url,options)=>{assert.equal(options.credentials,'omit');assert.equal(new URL(url).host,'chatgpt.com');return new Response('ip=1.1.1.1\nloc=AU\n');};
   try{const result=await probeExit({url:'https://chatgpt.com/cdn-cgi/trace'},new AbortController().signal);assert.equal(result.ip,'1.1.1.1');assert.equal(result.host,'chatgpt.com');}finally{globalThis.fetch=original;}
 });
+test('redirected probes disclose the responding host and preserve response evidence on invalid payloads',async()=>{
+  const original=globalThis.fetch;
+  try {
+    globalThis.fetch=async()=>{const response=new Response('ip=1.1.1.1\nloc=AU\n');Object.defineProperty(response,'url',{value:'https://redirect.example/cdn-cgi/trace'});return response;};
+    const result=await probeExit({url:'https://example.com/cdn-cgi/trace'},new AbortController().signal);
+    assert.equal(result.host,'redirect.example');assert.equal(result.requestedHost,'example.com');assert.equal(result.redirected,true);
+    for(const probe of ['header','json','text-ip']){
+      globalThis.fetch=async()=>new Response('{}');
+      await assert.rejects(probeExit({url:'https://example.com/',probe},new AbortController().signal),error=>error.reachable===true);
+    }
+  }finally{globalThis.fetch=original;}
+});
 test('an unreadable or non-success trace cannot become a successful exit result',async()=>{
   const original=globalThis.fetch;
   try{globalThis.fetch=async()=>new Response('ip=1.1.1.1',{status:403});await assert.rejects(probeExit({url:'https://example.com/cdn-cgi/trace'},new AbortController().signal),/403/);

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { isIP } from 'node:net';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { canonicalIp } from './public/core.mjs';
 
 const MiB = 1024 * 1024;
 const bool = value => typeof value === 'boolean' ? value : null;
@@ -12,7 +13,7 @@ export function publicIp(ip) {
   const version = isIP(ip);
   if (version === 4) {
     const [a,b,c] = ip.split('.').map(Number);
-    return !(a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 168 || b === 0 || (b === 0 && c === 2))) || (a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19 || b === 51)) || (a === 203 && b === 0 && c === 113));
+    return !(a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)))) || (a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) || (a === 203 && b === 0 && c === 113));
   }
   if (version === 6) {
     const canonical = new URL(`http://[${ip}]/`).hostname.toLowerCase();
@@ -91,7 +92,7 @@ export function createApp(options = {}) {
         if (new URL(`http://${isIP(ip) === 6 ? `[${ip}]` : ip}`).hostname !== new URL(`http://${isIP(value.ip) === 6 ? `[${value.ip}]` : value.ip}`).hostname) throw new Error('数据源返回了不同 IP');
       } catch {
         const raw = await lookupFetch(`https://ipwho.is/${encodeURIComponent(ip)}`);
-        if (!raw.success || raw.ip !== ip) throw new Error('IP 数据源暂时不可用，请稍后重试');
+        if (!raw.success || canonicalIp(raw.ip) !== canonicalIp(ip)) throw new Error('IP 数据源暂时不可用，请稍后重试');
         value = { ip, source:'ipwho.is', checkedAt:new Date().toISOString(), country:raw.country, countryCode:raw.country_code, city:raw.city, region:raw.region, timezone:raw.timezone?.id, isp:raw.connection?.isp, asn:raw.connection?.asn, networkType:null, flags:{}, notice:'备用数据源仅提供归属地，风险信息未知。' };
       }
       if (cache.size >= 256) cache.delete(cache.keys().next().value);
@@ -111,12 +112,12 @@ export function createApp(options = {}) {
     try {
       const url = new URL(req.url,'http://localhost');
       const ip = clientIp(req,trustProxy);
-      if (req.method === 'GET' && url.pathname === '/healthz') return json(res,200,{ status:'ok', app:'speedlens', version:'1.2.0' });
-      if (req.method === 'GET' && url.pathname === '/api/context') return json(res,200,{ ip, public:publicIp(ip), node:process.env.RENDER_REGION || (process.env.RENDER ? 'Render' : '本地测试节点'), version:'1.2.0' });
+      if (req.method === 'GET' && url.pathname === '/healthz') return json(res,200,{ status:'ok', app:'speedlens', version:'1.2.1' });
+      if (req.method === 'GET' && url.pathname === '/api/context') return json(res,200,{ ip, public:publicIp(ip), node:process.env.RENDER_REGION || (process.env.RENDER ? 'Render' : '本地测试节点'), version:'1.2.1' });
       if (req.method === 'GET' && url.pathname === '/api/ping') { res.writeHead(204,{'Cache-Control':'no-store'}); return res.end(); }
       if (req.method === 'GET' && url.pathname === '/api/lookup') {
         if (!permit(`lookup:${ip}`,60)) return json(res,429,{ error:'查询过于频繁，一分钟后再试' });
-        const target = url.searchParams.get('ip')?.trim();
+        const target = canonicalIp(normalizeIp(url.searchParams.get('ip')?.trim()));
         if (!publicIp(target)) return json(res,400,{ error:'请输入有效的公网 IPv4 或 IPv6 地址' });
         try { return json(res,200,await lookup(target)); } catch (e) { return json(res,503,{ error:e.message }); }
       }

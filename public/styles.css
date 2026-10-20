@@ -176,6 +176,9 @@ main { max-width: 1300px; padding: 39px 36px 48px; min-height: calc(100vh - 166p
 .service-card:hover { background: var(--soft); }
 .service-name { font-size: 12px; font-weight: 550; }
 .service-domain { font: 8px/1.7 "SFMono-Regular", Consolas, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.service-details { min-width: 0; flex: 1; }
+.probe-explanation { display: block; color: var(--muted); font-size: 10px; line-height: 1.6; margin-top: 5px; }
+.service-actions { display: flex; justify-content: flex-end; gap: 3px; flex-wrap: wrap; }
 .service-status { margin-left: auto; color: var(--muted); font-size: 10px; text-align: right; flex-shrink: 0; }
 .service-status small { font-size: 8px; display: block; margin-top: 3px; }
 .success { color: var(--green) !important; }

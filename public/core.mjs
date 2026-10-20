@@ -13,6 +13,7 @@ export function compareExits(rows) {
   const domestic = rows.find(x => x.id === 'domestic' && canonicalIp(x.ip));
   const overseas = rows.find(x => x.id === 'cloudflare' && canonicalIp(x.ip));
   if (!domestic || !overseas) return { kind: 'unknown', title: '等待出口对照', detail: '至少需要国内检测点和 Cloudflare 都返回有效 IP。' };
+  if (domestic.viaFallback || domestic.redirected || overseas.redirected) return { kind:'unknown', title:'检测点已替代，暂不判断分流', detail:'国内检测点使用了备用站，或检测请求跳转到其他域名；这些结果不能作为原检测点的分流证据。' };
   if (domestic.ip.includes(':') !== overseas.ip.includes(':')) return { kind: 'unknown', title: 'IP 协议不同，暂不比较', detail: '两处分别返回 IPv4 与 IPv6，不能据此判断分流。' };
   if (canonicalIp(domestic.ip) === canonicalIp(overseas.ip)) return { kind: 'same', title: '两个检测点出口一致', detail: '当前国内与 Cloudflare 检测点看到相同 IP；可能经过同一出口，也可能是直连。' };
   return { kind: 'different', title: '观察到不同出口', detail: '国内与 Cloudflare 检测点的 IP 不同，符合分流特征；仍需结合你的规则与 VPN 日志确认。' };
@@ -40,5 +41,5 @@ export function median(values) {
 
 export function safeHistory(value) {
   if (!Array.isArray(value)) return [];
-  return value.filter(x => x && typeof x.time === 'string' && Number.isFinite(Date.parse(x.time)) && typeof x.label === 'string' && x.label.length <= 80 && Array.isArray(x.exits) && x.exits.every(r => typeof r.name === 'string' && r.name.length <= 80 && validIp(r.ip)) && Number.isInteger(x.responded) && Number.isInteger(x.total) && x.responded >= 0 && x.responded <= x.total && x.total <= 100).slice(0,20);
+  return value.filter(x => x && typeof x.time === 'string' && Number.isFinite(Date.parse(x.time)) && typeof x.label === 'string' && x.label.length <= 80 && Array.isArray(x.exits) && x.exits.every(r => r && typeof r.name === 'string' && r.name.length <= 80 && validIp(r.ip)) && Number.isInteger(x.responded) && Number.isInteger(x.total) && x.responded >= 0 && x.responded <= x.total && x.total <= 100).slice(0,20);
 }

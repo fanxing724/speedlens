@@ -39,18 +39,22 @@ async function probeOnce(target,signal) {
     const response=await fetch(url,{method:target.method||'GET',signal:ownSignal,cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
     if(!response.ok){const error=new Error(`探针返回 HTTP ${response.status}`);error.reachable=true;error.httpStatus=response.status;throw error;}
     let data;
-    if(target.probe==='header') {
-      data={ip:parseHeaderIp(response.headers)};
-      if(response.body)await response.body.cancel();
-    } else if(target.probe==='text-ip') {
-      const ip=(await response.text()).trim();if(!validIp(ip))throw new Error('探针没有返回有效出口 IP');data={ip:canonicalIp(ip)};
-    } else if(target.probe==='json') {
-      const body=await response.json();
-      const ip=target.id==='domestic' ? body.data?.ip : body.ip;
-      if(!validIp(ip))throw new Error('探针没有返回有效出口 IP');
-      data={ip:canonicalIp(ip),location:target.id==='domestic'&&Array.isArray(body.data?.location) ? body.data.location.join(' · ') : null};
-    } else {try{data=parseTrace(await response.text());}catch(error){error.reachable=true;throw error;}}
-    return {...data,ms:performance.now()-started,host:url.host};
+    const host=response.url ? new URL(response.url).host : url.host;
+    try {
+      if(target.probe==='header') {
+        data={ip:parseHeaderIp(response.headers)};
+        if(response.body)await response.body.cancel();
+      } else if(target.probe==='text-ip') {
+        const ip=(await response.text()).trim();if(!validIp(ip))throw new Error('探针没有返回有效出口 IP');data={ip:canonicalIp(ip)};
+      } else if(target.probe==='json') {
+        const body=await response.json();
+        const ip=target.id==='domestic' ? body.data?.ip : body.ip;
+        if(!validIp(ip))throw new Error('探针没有返回有效出口 IP');
+        data={ip:canonicalIp(ip),location:target.id==='domestic'&&Array.isArray(body.data?.location) ? body.data.location.join(' · ') : null};
+      } else data=parseTrace(await response.text());
+    } catch(error) { error.reachable=true;throw error; }
+    ownSignal.throwIfAborted();
+    return {...data,ms:performance.now()-started,host,requestedHost:url.host,redirected:host!==url.host};
   });
 }
 
