@@ -57,7 +57,7 @@ async function upstreamJson(url, headers = {}) {
   return JSON.parse(body);
 }
 
-const MIME = { '/': 'text/html; charset=utf-8', '/styles.css': 'text/css; charset=utf-8', '/app.mjs': 'text/javascript; charset=utf-8', '/core.mjs': 'text/javascript; charset=utf-8', '/catalog.mjs': 'text/javascript; charset=utf-8', '/probes.mjs': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml' };
+const MIME = { '/': 'text/html; charset=utf-8', '/styles.css': 'text/css; charset=utf-8', '/app.mjs': 'text/javascript; charset=utf-8', '/core.mjs': 'text/javascript; charset=utf-8', '/catalog.mjs': 'text/javascript; charset=utf-8', '/probes.mjs': 'text/javascript; charset=utf-8', '/diagnostics.mjs': 'text/javascript; charset=utf-8', '/favicon.svg': 'image/svg+xml' };
 const assets = new Map(await Promise.all(Object.entries(MIME).map(async ([path,type]) => [path,{ type, body: await readFile(new URL(`public/${path === '/' ? 'index.html' : path.slice(1)}`, import.meta.url)) }])));
 
 export function createApp(options = {}) {
@@ -111,8 +111,8 @@ export function createApp(options = {}) {
     try {
       const url = new URL(req.url,'http://localhost');
       const ip = clientIp(req,trustProxy);
-      if (req.method === 'GET' && url.pathname === '/healthz') return json(res,200,{ status:'ok', app:'speedlens', version:'1.1.0' });
-      if (req.method === 'GET' && url.pathname === '/api/context') return json(res,200,{ ip, public:publicIp(ip), node:process.env.RENDER_REGION || (process.env.RENDER ? 'Render' : '本地测试节点'), version:'1.1.0' });
+      if (req.method === 'GET' && url.pathname === '/healthz') return json(res,200,{ status:'ok', app:'speedlens', version:'1.2.0' });
+      if (req.method === 'GET' && url.pathname === '/api/context') return json(res,200,{ ip, public:publicIp(ip), node:process.env.RENDER_REGION || (process.env.RENDER ? 'Render' : '本地测试节点'), version:'1.2.0' });
       if (req.method === 'GET' && url.pathname === '/api/ping') { res.writeHead(204,{'Cache-Control':'no-store'}); return res.end(); }
       if (req.method === 'GET' && url.pathname === '/api/lookup') {
         if (!permit(`lookup:${ip}`,60)) return json(res,429,{ error:'查询过于频繁，一分钟后再试' });
@@ -126,8 +126,9 @@ export function createApp(options = {}) {
         if (!permit('speed-day',20,86_400_000)) return json(res,429,{ error:'本站今日轻量测速额度已用完（20 次），其他检测可正常使用' });
         for (const [key,value] of sessions) if (value.until < Date.now()) sessions.delete(key);
         const token = randomUUID();
-        sessions.set(token,{ ip, until:Date.now()+60_000, download:false, upload:false });
-        return json(res,200,{ token, downloadBytes:4*MiB, uploadBytes:MiB });
+        const quick=url.searchParams.get('mode')==='quick';
+        sessions.set(token,{ ip, until:Date.now()+240_000, download:false, upload:false, downloadBytes:quick?MiB:4*MiB, uploadBytes:quick?MiB/4:MiB });
+        return json(res,200,{ token, downloadBytes:quick?MiB:4*MiB, uploadBytes:quick?MiB/4:MiB });
       }
       if (url.pathname.startsWith('/api/speed/')) {
         const session = sessions.get(req.headers['x-probe-token']);
@@ -138,22 +139,22 @@ export function createApp(options = {}) {
           session.download = true;
           activeTransfer++;
           res.once('close',()=>activeTransfer--);
-          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':4*MiB,'Cache-Control':'no-store, no-transform','Content-Encoding':'identity'});
+          res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':session.downloadBytes,'Cache-Control':'no-store, no-transform','Content-Encoding':'identity'});
           let sent = 0;
-          const write = () => { while (!res.destroyed && sent < 4*MiB) { sent += randomBlock.length; if (!res.write(randomBlock)) { res.once('drain',write); return; } } if (!res.destroyed) res.end(); };
+          const write = () => { while (!res.destroyed && sent < session.downloadBytes) { sent += randomBlock.length; if (!res.write(randomBlock)) { res.once('drain',write); return; } } if (!res.destroyed) res.end(); };
           return write();
         }
         if (req.method === 'POST' && url.pathname === '/api/speed/upload') {
           if (session.upload) return json(res,409,{ error:'本次上传测试已完成' });
           session.upload = true;
           const length = Number(req.headers['content-length']);
-          if (req.headers['content-encoding'] || (Number.isFinite(length) && length > MiB)) return json(res,413,{error:'上传大小上限为 1 MiB'});
+          if (req.headers['content-encoding'] || (Number.isFinite(length) && length > session.uploadBytes)) return json(res,413,{error:'上传大小超过本次测速额度'});
           activeTransfer++;
           res.once('close',()=>activeTransfer--);
           let bytes = 0;
-          const deadline = setTimeout(()=>{ json(res,408,{error:'上传超时'}); req.destroy(); },15_000);
+          const deadline = setTimeout(()=>{ json(res,408,{error:'上传超时'}); req.destroy(); },60_000);
           res.once('close',()=>clearTimeout(deadline));
-          req.on('data',chunk=>{ bytes += chunk.length; if (bytes > MiB) { clearTimeout(deadline); json(res,413,{error:'上传大小上限为 1 MiB'}); req.destroy(); } });
+          req.on('data',chunk=>{ bytes += chunk.length; if (bytes > session.uploadBytes) { clearTimeout(deadline); json(res,413,{error:'上传大小超过本次测速额度'}); req.destroy(); } });
           req.on('end',()=>{ clearTimeout(deadline); if (!res.writableEnded) json(res,200,{ bytes }); });
           return;
         }
@@ -166,7 +167,7 @@ export function createApp(options = {}) {
       return json(res,404,{ error:'接口不存在' });
     } catch { if (!res.headersSent) json(res,500,{error:'请求处理失败，请重试'}); else res.destroy(); }
   });
-  server.requestTimeout = 20_000;
+  server.requestTimeout = 70_000;
   server.headersTimeout = 10_000;
   server.maxConnections = 80;
   return server;

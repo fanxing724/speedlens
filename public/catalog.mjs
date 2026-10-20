@@ -1,8 +1,8 @@
 export const exitSources = [
-  { id:'domestic',name:'国内测试',subtitle:'IPIP 国内检测点',url:'https://myip.ipip.net/json',probe:'json',description:'访问此国内检测点时的出口 IP' },
-  { id:'international',name:'国外测试',subtitle:'ipify · IPv4',url:'https://api.ipify.org?format=json',probe:'json',description:'访问此国际检测点时的出口 IP' },
-  { id:'cloudflare',name:'Cloudflare',subtitle:'CF CDN · 双栈',url:'https://www.cloudflare.com/cdn-cgi/trace',description:'访问此 Cloudflare 站点时的出口 IP' },
-  { id:'x',name:'X 服务测试',subtitle:'help.x.com',url:'https://help.x.com/cdn-cgi/trace',description:'访问 X 帮助站探针时的出口 IP' },
+  { id:'domestic',fallbacks:[{url:'https://www.qualcomm.cn/cdn-cgi/trace',probe:'trace'},{url:'https://perfops.cloudflareperf.com/cdn-cgi/trace',probe:'trace'}],name:'国内测试',subtitle:'IPIP 国内检测点',url:'https://myip.ipip.net/json',probe:'json',description:'访问此国内检测点时的出口 IP' },
+  { id:'international',fallbacks:[{url:'https://ipv4.icanhazip.com',probe:'text-ip'},{url:'https://api64.ipify.org?format=json',probe:'json'}],name:'国外测试',subtitle:'ipify · IPv4',url:'https://api.ipify.org?format=json',probe:'json',description:'访问此国际检测点时的出口 IP' },
+  { id:'cloudflare',fallbacks:[{url:'https://one.one.one.one/cdn-cgi/trace',probe:'trace'}],name:'Cloudflare',subtitle:'CF CDN · 双栈',url:'https://www.cloudflare.com/cdn-cgi/trace',description:'访问此 Cloudflare 站点时的出口 IP' },
+  { id:'x',fallbacks:[{url:'https://x.com/cdn-cgi/trace',probe:'trace'}],name:'X 服务测试',subtitle:'help.x.com',url:'https://help.x.com/cdn-cgi/trace',description:'访问 X 帮助站探针时的出口 IP' },
 ];
 
 export const services = [
@@ -26,11 +26,27 @@ export const services = [
   { id:'npm', name:'npm', domain:'www.npmjs.com', group:'dev', mark:'npm', color:'#d87878', path:'/favicon.ico' },
 ];
 
+export const extraServices = [
+ {id:'discord',name:'Discord',domain:'discord.com',group:'global',mark:'D',color:'#7685d5',path:'/favicon.ico'},
+ {id:'reddit',name:'Reddit',domain:'www.reddit.com',group:'global',mark:'R',color:'#c78458',path:'/favicon.ico'},
+ {id:'bing',name:'Bing',domain:'www.bing.com',group:'global',mark:'B',color:'#489c9c',path:'/favicon.ico'},
+ {id:'grok',name:'Grok',domain:'grok.com',group:'ai',mark:'G',color:'#788980',path:'/favicon.ico'},
+ {id:'deepseek',name:'DeepSeek',domain:'chat.deepseek.com',group:'ai',mark:'DS',color:'#728bcc',path:'/favicon.ico'},
+ {id:'perplexity',name:'Perplexity',domain:'www.perplexity.ai',group:'ai',mark:'P',color:'#699e9b',path:'/favicon.ico'},
+ {id:'qwen',name:'千问',domain:'chat.qwen.ai',group:'ai',mark:'Q',color:'#9c87c0',path:'/favicon.ico'},
+ {id:'doubao',name:'豆包',domain:'www.doubao.com',group:'ai',mark:'豆',color:'#739bcc',path:'/favicon.ico'},
+ {id:'twitch',name:'Twitch',domain:'www.twitch.tv',group:'stream',mark:'T',color:'#a18ac9',path:'/favicon.ico'},
+ {id:'gitlab',name:'GitLab',domain:'gitlab.com',group:'dev',mark:'GL',color:'#cf965c',path:'/favicon.ico'},
+ {id:'docker',name:'Docker Hub',domain:'hub.docker.com',group:'dev',mark:'D',color:'#649aca',path:'/favicon.ico'},
+ {id:'stackoverflow',name:'Stack Overflow',domain:'stackoverflow.com',group:'dev',mark:'SO',color:'#b5976c',path:'/favicon.ico'},
+];
+services.push(...extraServices);
+
 export const groups = { all:'全部', ai:'AI 服务', global:'国际网站', local:'国内网站', stream:'影音娱乐', dev:'开发工具' };
 
 
 export const quickServices = [
-  {id:'bytedance',name:'字节跳动',domain:'www.bytedance.com',path:'/favicon.ico',group:'local',mark:'▥',color:'#4187ff'},
+  {id:'bytedance',name:'字节跳动',domain:'perfops.byte-test.com',path:'/500b-bench.jpg',group:'local',mark:'▥',color:'#4187ff'},
   {id:'bilibili',name:'Bilibili',domain:'www.bilibili.com',path:'/favicon.ico',group:'local',mark:'哔',color:'#ef84a4'},
   {id:'wechat',name:'微信',domain:'weixin.qq.com',path:'/favicon.ico',group:'local',mark:'●',color:'#22b466'},
   {id:'taobao',name:'淘宝',domain:'www.taobao.com',path:'/favicon.ico',group:'local',mark:'淘',color:'#ff8b30'},

@@ -1,6 +1,6 @@
 {
   "name": "speedlens",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Browser-first VPN exit, routing and service diagnostics",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node --max-old-space-size=192 server.mjs",
     "dev": "node --watch server.mjs",
-    "check": "node --check server.mjs && node --check public/app.mjs && node --check public/core.mjs && node --check public/probes.mjs && node --check public/catalog.mjs",
+    "check": "node --check server.mjs && node --check public/app.mjs && node --check public/core.mjs && node --check public/probes.mjs && node --check public/catalog.mjs && node --check public/diagnostics.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "license": "MIT"

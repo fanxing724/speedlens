@@ -62,3 +62,10 @@ test('cross-site session creation and excessive lookup requests are rejected',as
   for(let i=0;i<61;i++) last=await fetch(`${base}/api/lookup?ip=invalid`);
   assert.equal(last.status,429);assert.equal(last.headers.get('retry-after'),'60');
 }));
+
+test('quick speed mode transfers 1 MiB down and 256 KiB up, using the session-specific budget',async()=>withApp(async base=>{
+ const session=await fetch(`${base}/api/speed/session?mode=quick`,{method:'POST'}).then(r=>r.json());assert.equal(session.downloadBytes,1024*1024);assert.equal(session.uploadBytes,256*1024);
+ const headers={'X-Probe-Token':session.token};
+ const response=await fetch(`${base}/api/speed/download`,{headers});assert.equal((await response.arrayBuffer()).byteLength,session.downloadBytes);
+ const upload=await fetch(`${base}/api/speed/upload`,{method:'POST',headers,body:Buffer.alloc(session.uploadBytes)}).then(r=>r.json());assert.equal(upload.bytes,session.uploadBytes);
+}));
