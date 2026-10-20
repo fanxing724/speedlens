@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: speedlens
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --ignore-scripts && npm run check && npm test
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_RENDER_PROXY
+        value: "1"
