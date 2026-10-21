@@ -1,3 +1,16 @@
+<!-- fanxing-style:start -->
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="https://fanxing724.github.io/new-make/fanxing724/projects/speedlens/cover.light.svg">
+  <img alt="SpeedLens · 网络透镜" src="https://fanxing724.github.io/new-make/fanxing724/projects/speedlens/cover.svg" width="100%">
+</picture>
+
+**换了节点，也想看清网络走向。**
+
+节点连上之后，出口在哪里、网站走哪条路、一次失败意味着什么，仍然需要逐项确认。网络透镜把这些线索放进浏览器，让每次切换都有据可看。
+
+<sub>番星 / 星轨手记 · <a href="https://fanxing724.github.io/new-make/fanxing724/projects/style.html">风格样板</a> · <a href="https://fanxing724.github.io/">个人小站</a></sub>
+<!-- fanxing-style:end -->
+
 # SpeedLens · 网络透镜
 
 面向 VPN 与分流环境的浏览器网络检测工具。v1.2 保留 [参考站的网络状态与分流交互](https://cf.090227.xyz/) 的顶部导航、出口卡片与分流表，采用米白、墨色和暖橙的视觉设计，界面与逻辑独立编写。不包含 CF 优选域名或优选 IP 聚合。
